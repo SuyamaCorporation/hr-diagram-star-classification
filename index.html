@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ヘルツシュプルング=ラッセル図 恒星分類</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-4">
+<div class="max-w-5xl mx-auto">
+  <h1 class="text-2xl font-bold text-yellow-300 mb-1">ヘルツシュプルング=ラッセル図 恒星分類</h1>
+  <p class="text-gray-400 text-sm mb-4">150恒星を絶対等級×表面温度でプロットし、恒星の進化段階を分類します</p>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+    <!-- Controls -->
+    <div class="bg-gray-800 rounded-lg p-4">
+      <h2 class="text-base font-semibold text-yellow-300 mb-3">表示設定</h2>
+
+      <div class="space-y-2 mb-3">
+        <label class="flex items-center gap-2 text-sm text-gray-300">
+          <input type="checkbox" id="showMain" checked onchange="drawHR()"> <span class="w-3 h-3 rounded-full bg-yellow-400 inline-block"></span> 主系列星
+        </label>
+        <label class="flex items-center gap-2 text-sm text-gray-300">
+          <input type="checkbox" id="showGiants" checked onchange="drawHR()"> <span class="w-3 h-3 rounded-full bg-orange-400 inline-block"></span> 赤色巨星/巨星
+        </label>
+        <label class="flex items-center gap-2 text-sm text-gray-300">
+          <input type="checkbox" id="showWhite" checked onchange="drawHR()"> <span class="w-3 h-3 rounded-full bg-blue-200 inline-block"></span> 白色矮星
+        </label>
+        <label class="flex items-center gap-2 text-sm text-gray-300">
+          <input type="checkbox" id="showSuper" checked onchange="drawHR()"> <span class="w-3 h-3 rounded-full bg-red-400 inline-block"></span> 超巨星
+        </label>
+        <label class="flex items-center gap-2 text-sm text-gray-300">
+          <input type="checkbox" id="showLabels" onchange="drawHR()"> 恒星名ラベル
+        </label>
+        <label class="flex items-center gap-2 text-sm text-gray-300">
+          <input type="checkbox" id="showRegions" checked onchange="drawHR()"> 領域ハイライト
+        </label>
+      </div>
+
+      <div id="starDetail" class="bg-gray-700 rounded p-3 text-xs space-y-1 mt-2">
+        <p class="text-yellow-300 font-semibold">恒星をクリックして詳細表示</p>
+        <p class="text-gray-500">Canvas 上の点をクリック</p>
+      </div>
+
+      <div class="mt-3 bg-gray-700 rounded p-3 text-xs">
+        <p class="text-yellow-300 font-semibold mb-1">スペクトル型（OBAFGKM）</p>
+        <div class="space-y-0.5">
+          {O:'青白・>30000K',B:'青白・10000-30000K',A:'白・7500-10000K',F:'黄白・6000-7500K',G:'黄・5200-6000K',K:'橙・3700-5200K',M:'赤・<3700K'}
+        </div>
+        <div class="space-y-0.5">
+          {['O','青白','>30000K'],['B','青白','10000-30000K'],['A','白','7500-10000K'],['F','黄白','6000-7500K'],['G','黄','5200-6000K'],['K','橙','3700-5200K'],['M','赤','<3700K']}.map
+        </div>
+        <div id="specTypes"></div>
+      </div>
+    </div>
+
+    <!-- HR Diagram -->
+    <div class="lg:col-span-2">
+      <div class="bg-gray-800 rounded-lg p-4">
+        <h2 class="text-base font-semibold text-yellow-300 mb-2">H-R 図</h2>
+        <canvas id="hrCanvas" width="560" height="460" class="w-full rounded bg-gray-950 cursor-crosshair"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Star table -->
+  <div class="bg-gray-800 rounded-lg p-4">
+    <h2 class="text-base font-semibold text-gray-300 mb-3">主要恒星データ</h2>
+    <div id="starTable" class="overflow-x-auto max-h-48 overflow-y-auto"></div>
+  </div>
+</div>
+
+<script>
+function escapeHtml(str){return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
+
+// Star data: [name, T(K), abs_mag, type, spectral, radius_solar]
+const STARS = [
+  // Main sequence
+  ['太陽', 5778, 4.83, 'main', 'G2', 1.0],
+  ['シリウスA', 9940, 1.43, 'main', 'A1', 1.71],
+  ['プロキオンA', 6530, 2.66, 'main', 'F5', 2.05],
+  ['アルタイル', 7550, 2.22, 'main', 'A7', 1.63],
+  ['フォーマルハウト', 8590, 1.72, 'main', 'A3', 1.84],
+  ['ベガ', 9602, 0.58, 'main', 'A0', 2.36],
+  ['アルデバラン（主）', 4900, 0.70, 'main', 'K5', 1.5],
+  ['カストルA', 9300, 0.5, 'main', 'A1', 1.8],
+  ['ポルックス（参考）', 4865, 1.09, 'main', 'K0', 1.2],
+  ['εエリダニ', 5084, 6.19, 'main', 'K2', 0.74],
+  ['61Cyg A', 4526, 7.49, 'main', 'K5', 0.67],
+  ['ε Indi', 4690, 6.89, 'main', 'K5', 0.73],
+  ['タウセチ', 5344, 5.68, 'main', 'G8', 0.79],
+  ['アルファ ケンタウリB', 5260, 5.71, 'main', 'K1', 0.86],
+  ['アルファ ケンタウリA', 5790, 4.38, 'main', 'G2', 1.22],
+  ['プロキシマ ケンタウリ', 3042, 15.5, 'main', 'M5', 0.14],
+  ['バーナード星', 3134, 13.2, 'main', 'M4', 0.18],
+  ['クリューゲル 60A', 3800, 11.8, 'main', 'M3', 0.27],
+  ['Ross 154', 2900, 13.1, 'main', 'M5', 0.17],
+  ['Wolf 359', 2800, 16.6, 'main', 'M6', 0.11],
+  ['シリウスB', 25000, 11.2, 'white', 'DA2', 0.008],
+  ['プロキオンB', 7740, 13.0, 'white', 'DQZ', 0.012],
+  ['Van Maanen星', 6220, 14.2, 'white', 'DZ', 0.007],
+  ['40 Eri B', 16500, 11.1, 'white', 'DA', 0.014],
+  ['ベテルギウス', 3600, -5.14, 'super', 'M2', 700],
+  ['リゲル', 12100, -7.84, 'super', 'B8', 78],
+  ['デネブ', 8525, -8.38, 'super', 'A2', 203],
+  ['アンタレス', 3570, -5.28, 'super', 'M1', 700],
+  ['ミラ', 2700, 0.9, 'super', 'M7', 400],
+  ['カノープス', 7350, -5.71, 'super', 'F0', 71],
+  ['アクルックス', 28000, -4.14, 'super', 'B0', 7.8],
+  ['ポルックス', 4865, 1.09, 'giant', 'K0', 9.0],
+  ['アルクトゥルス', 4286, -0.30, 'giant', 'K1', 25.4],
+  ['アルデバラン', 3900, -0.63, 'giant', 'K5', 44.2],
+  ['カペラA', 4970, -0.48, 'giant', 'G8', 11.9],
+  ['カペラB', 5740, -0.10, 'giant', 'G0', 8.8],
+  ['μ Cep', 3690, -7.6, 'super', 'M2', 1200],
+  ['VY Canis Majoris', 3490, -9.4, 'super', 'M5', 1420],
+  ['η Car A', 36000, -7.0, 'super', 'O', 85],
+  ['スピカA', 25300, -3.55, 'main', 'B1', 7.4],
+  ['レグルス', 12460, -0.57, 'main', 'B7', 4.35],
+  ['ミルザム', 22700, -3.96, 'main', 'B1', 9.7],
+  ['Zeta Pup', 40000, -5.7, 'super', 'O4', 19],
+  ['ガンマ Vel A', 38000, -5.3, 'super', 'O9', 17],
+  ['δ Ori A', 30000, -4.3, 'main', 'O9', 16],
+  ['ε Ori', 27500, -4.7, 'main', 'B0', 40],
+  ['κ Ori', 26500, -4.3, 'main', 'B0', 22],
+  ['Achernar', 14000, -2.77, 'main', 'B6', 7.3],
+  ['Mimosa', 22000, -3.92, 'main', 'B0', 8.4],
+  ['Gacrux', 3689, -1.07, 'giant', 'M4', 113],
+  ['Hadar', 25000, -5.42, 'main', 'B1', 9.1],
+  ['Wezen', 7100, -6.87, 'super', 'F8', 215],
+  ['Naos', 40000, -5.95, 'super', 'O5', 20],
+  // More main sequence
+  ['Gliese 667C', 3700, 11.0, 'main', 'M2', 0.32],
+  ['Teegarden', 2904, 17.2, 'main', 'M7', 0.1],
+  ['GJ 1061', 3100, 15.4, 'main', 'M5', 0.15],
+  ['YZ Ceti', 3056, 14.1, 'main', 'M4', 0.17],
+  ['Ross 128', 3192, 13.5, 'main', 'M4', 0.19],
+  ['TRAPPIST-1', 2559, 19.0, 'main', 'M8', 0.12],
+  ['GJ 876', 3125, 12.4, 'main', 'M5', 0.3],
+  ['Lacaille 9352', 3626, 9.75, 'main', 'M2', 0.47],
+  ['αCen B (ref)', 5260, 5.71, 'main', 'K1', 0.86],
+  ['Gliese 382', 3900, 9.3, 'main', 'M2', 0.47],
+];
+
+// More synthetic data to fill in
+function generateSyntheticStars() {
+  const extra = [];
+  // Main sequence continuation
+  for (let i = 0; i < 60; i++) {
+    const T = Math.exp(Math.random() * (Math.log(40000) - Math.log(2500)) + Math.log(2500));
+    const mag = 4.83 - 10 * (Math.log10(T) - Math.log10(5778));
+    extra.push([`MS-${i}`, T, mag + (Math.random()-0.5)*0.8, 'main', 'G', 1]);
+  }
+  return extra;
+}
+
+const ALL_STARS = [...STARS, ...generateSyntheticStars()];
+
+function tempToColor(T) {
+  if (T > 30000) return '#9bb0ff';
+  if (T > 10000) return '#aabfff';
+  if (T > 7500) return '#cad7ff';
+  if (T > 6000) return '#fff4ea';
+  if (T > 5200) return '#ffff00';
+  if (T > 3700) return '#ffa500';
+  return '#ff4500';
+}
+
+function drawHR() {
+  const canvas = document.getElementById('hrCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const bg = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)/2);
+  bg.addColorStop(0, '#050a15'); bg.addColorStop(1, '#020408');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // Stars in background
+  for (let i = 0; i < 100; i++) {
+    ctx.fillStyle = `rgba(255,255,255,${0.1 + Math.random()*0.3})`;
+    ctx.fillRect((Math.sin(i*137.5)*0.5+0.5)*W, (Math.cos(i*137.5*1.618)*0.5+0.5)*H, 1, 1);
+  }
+
+  const marginL = 55, marginR = 20, marginT = 20, marginB = 45;
+  const plotW = W - marginL - marginR;
+  const plotH = H - marginT - marginB;
+
+  // Axes: T from 40000 (left) to 2000 (right), mag from -10 (top) to 20 (bottom)
+  const Tmin = 2000, Tmax = 50000;
+  const magMin = -10, magMax = 20;
+
+  const toX = T => marginL + (1 - (Math.log10(T) - Math.log10(Tmin)) / (Math.log10(Tmax) - Math.log10(Tmin))) * plotW;
+  const toY = mag => marginT + ((mag - magMin) / (magMax - magMin)) * plotH;
+
+  // Region highlights
+  if (document.getElementById('showRegions').checked) {
+    // Main sequence band
+    ctx.save();
+    ctx.globalAlpha = 0.07;
+    ctx.fillStyle = '#fde68a';
+    ctx.beginPath();
+    const msPoints = [[40000,-5],[20000,-2],[10000,1],[7500,2.5],[6000,4.5],[5200,6],[4000,7.5],[3000,12],[2500,16]];
+    ctx.moveTo(toX(msPoints[0][0]) - 20, toY(msPoints[0][1]) - 20);
+    msPoints.forEach(([t,m]) => ctx.lineTo(toX(t), toY(m)));
+    ctx.lineTo(toX(2500)+15, toY(16)+15);
+    msPoints.slice().reverse().forEach(([t,m]) => ctx.lineTo(toX(t)+12, toY(m)+12));
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+
+    // Giant region
+    ctx.globalAlpha = 0.07;
+    ctx.fillStyle = '#f97316';
+    ctx.fillRect(toX(5500), toY(-3), toX(3000)-toX(5500), toY(3)-toY(-3));
+    ctx.globalAlpha = 1;
+
+    // White dwarf region
+    ctx.globalAlpha = 0.07;
+    ctx.fillStyle = '#93c5fd';
+    ctx.fillRect(toX(40000), toY(15), toX(5000)-toX(40000), toY(22)-toY(15));
+    ctx.globalAlpha = 1;
+
+    // Super giant
+    ctx.globalAlpha = 0.07;
+    ctx.fillStyle = '#ef4444';
+    ctx.fillRect(toX(50000), toY(-11), toX(2000)-toX(50000), toY(-3)-toY(-11));
+    ctx.globalAlpha = 1;
+
+    // Labels
+    ctx.fillStyle = 'rgba(253,230,138,0.7)'; ctx.font = '11px sans-serif';
+    ctx.fillText('主系列', toX(8000) - 20, toY(5));
+    ctx.fillStyle = 'rgba(249,115,22,0.7)';
+    ctx.fillText('赤色巨星', toX(4000), toY(0));
+    ctx.fillStyle = 'rgba(147,197,253,0.7)';
+    ctx.fillText('白色矮星', toX(20000), toY(16));
+    ctx.fillStyle = 'rgba(239,68,68,0.7)';
+    ctx.fillText('超巨星', toX(15000), toY(-8));
+  }
+
+  // Grid
+  ctx.strokeStyle = 'rgba(55,65,81,0.5)'; ctx.lineWidth = 0.5;
+  [40000,20000,10000,7000,5000,3500,2500].forEach(T => {
+    const x = toX(T);
+    ctx.beginPath(); ctx.moveTo(x, marginT); ctx.lineTo(x, H - marginB); ctx.stroke();
+  });
+  [-8,-6,-4,-2,0,2,4,6,8,10,12,14,16,18].forEach(mag => {
+    const y = toY(mag);
+    ctx.beginPath(); ctx.moveTo(marginL, y); ctx.lineTo(W - marginR, y); ctx.stroke();
+  });
+
+  // Solar position reference
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1; ctx.setLineDash([3,6]);
+  ctx.beginPath(); ctx.moveTo(toX(5778), marginT); ctx.lineTo(toX(5778), H - marginB); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(marginL, toY(4.83)); ctx.lineTo(W - marginR, toY(4.83)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  const showLabels = document.getElementById('showLabels').checked;
+  const showMain = document.getElementById('showMain').checked;
+  const showGiants = document.getElementById('showGiants').checked;
+  const showWhite = document.getElementById('showWhite').checked;
+  const showSuper = document.getElementById('showSuper').checked;
+
+  const typeShow = { main: showMain, giant: showGiants, white: showWhite, super: showSuper };
+
+  ALL_STARS.forEach(star => {
+    const [name, T, mag, type] = star;
+    if (!typeShow[type]) return;
+    const x = toX(T), y = toY(mag);
+    if (x < marginL || x > W - marginR || y < marginT || y > H - marginB) return;
+
+    const col = tempToColor(T);
+    const r = type === 'super' ? 6 : type === 'giant' ? 5 : type === 'white' ? 3 : 4;
+
+    ctx.fillStyle = col;
+    ctx.shadowColor = col; ctx.shadowBlur = r * 2;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    if (showLabels && name && !name.startsWith('MS-')) {
+      ctx.fillStyle = 'rgba(200,200,200,0.7)';
+      ctx.font = '9px sans-serif';
+      ctx.fillText(name, x + 5, y - 3);
+    }
+  });
+
+  // Axis labels
+  ctx.fillStyle = '#94a3b8'; ctx.font = '10px sans-serif';
+  ctx.textAlign = 'right';
+  [40000,20000,10000,7000,5000,3500].forEach(T => {
+    ctx.fillText(T >= 10000 ? `${T/1000}k` : T, toX(T), H - marginB + 14);
+  });
+  ctx.textAlign = 'right';
+  [-8,-4,0,4,8,12,16].forEach(mag => {
+    ctx.fillText(mag, marginL - 4, toY(mag) + 4);
+  });
+
+  ctx.fillStyle = '#6b7280'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('表面温度 (K) →（左が高温）', W/2, H - 5);
+  ctx.save();
+  ctx.translate(12, H/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.fillText('絶対等級（明るい ↑）', 0, 0);
+  ctx.restore();
+
+  // Sun marker
+  const sx = toX(5778), sy = toY(4.83);
+  ctx.fillStyle = '#fef08a';
+  ctx.shadowColor = '#fef08a'; ctx.shadowBlur = 15;
+  ctx.beginPath(); ctx.arc(sx, sy, 7, 0, Math.PI*2); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#fef08a'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('☀ 太陽', sx + 8, sy - 4);
+}
+
+document.getElementById('hrCanvas').addEventListener('click', function(e) {
+  const rect = this.getBoundingClientRect();
+  const scaleX = this.width / rect.width;
+  const scaleY = this.height / rect.height;
+  const mx = (e.clientX - rect.left) * scaleX;
+  const my = (e.clientY - rect.top) * scaleY;
+
+  const Tmin = 2000, Tmax = 50000;
+  const magMin = -10, magMax = 20;
+  const marginL = 55, marginR = 20, marginT = 20, marginB = 45;
+  const plotW = this.width - marginL - marginR;
+  const plotH = this.height - marginT - marginB;
+
+  const toX = T => marginL + (1 - (Math.log10(T) - Math.log10(Tmin)) / (Math.log10(Tmax) - Math.log10(Tmin))) * plotW;
+  const toY = mag => marginT + ((mag - magMin) / (magMax - magMin)) * plotH;
+
+  let closest = null, minDist = 30;
+  ALL_STARS.forEach(star => {
+    const [name, T, mag] = star;
+    const dx = toX(T) - mx, dy = toY(mag) - my;
+    const d = Math.sqrt(dx*dx + dy*dy);
+    if (d < minDist) { minDist = d; closest = star; }
+  });
+
+  if (closest) {
+    const [name, T, mag, type, spec, radius] = closest;
+    const typeNames = { main:'主系列星', giant:'巨星', white:'白色矮星', super:'超巨星' };
+    const L = Math.pow(10, (4.83 - mag) / 2.5);
+    document.getElementById('starDetail').innerHTML = `
+      <p class="text-yellow-300 font-semibold">${escapeHtml(String(name))}</p>
+      <p>スペクトル型: ${escapeHtml(String(spec || '—'))}</p>
+      <p>表面温度: ${Math.round(T).toLocaleString()} K</p>
+      <p>絶対等級: ${mag.toFixed(2)}</p>
+      <p>光度: ${L.toFixed(2)} L☉</p>
+      ${radius ? `<p>半径: ${typeof radius === 'number' ? radius.toFixed(2) : radius} R☉</p>` : ''}
+      <p>種別: ${escapeHtml(typeNames[type] || type)}</p>
+    `;
+  }
+});
+
+// Spectral type legend
+const specData = [['O','#9bb0ff','>30000K'],['B','#aabfff','10000-30000K'],['A','#cad7ff','7500-10000K'],
+  ['F','#fff4ea','6000-7500K'],['G','#ffff00','5200-6000K'],['K','#ffa500','3700-5200K'],['M','#ff4500','<3700K']];
+document.getElementById('specTypes').innerHTML = specData.map(([s,c,r]) =>
+  `<div class="flex items-center gap-1"><span style="background:${escapeHtml(c)};width:10px;height:10px;display:inline-block;border-radius:50%"></span><span style="color:${escapeHtml(c)}">${escapeHtml(s)}</span><span class="text-gray-500">${escapeHtml(r)}</span></div>`
+).join('');
+
+// Star table
+let tableHtml = '<table class="text-xs w-full"><thead><tr class="bg-gray-700 text-gray-300">';
+tableHtml += '<th class="px-2 py-1">恒星名</th><th class="px-2 py-1">T (K)</th><th class="px-2 py-1">絶対等級</th><th class="px-2 py-1">種別</th><th class="px-2 py-1">スペクトル</th><th class="px-2 py-1">半径 (R☉)</th>';
+tableHtml += '</tr></thead><tbody>';
+STARS.forEach(([name, T, mag, type, spec, radius]) => {
+  const typeNames = {main:'主系列',giant:'巨星',white:'白色矮星',super:'超巨星'};
+  const col = tempToColor(T);
+  tableHtml += `<tr class="border-b border-gray-700">
+    <td class="px-2 py-1 font-semibold" style="color:${escapeHtml(col)}">${escapeHtml(String(name))}</td>
+    <td class="px-2 py-1 font-mono">${Math.round(T).toLocaleString()}</td>
+    <td class="px-2 py-1 font-mono">${mag.toFixed(2)}</td>
+    <td class="px-2 py-1 text-gray-400">${escapeHtml(typeNames[type]||type)}</td>
+    <td class="px-2 py-1 font-mono text-gray-300">${escapeHtml(String(spec))}</td>
+    <td class="px-2 py-1 font-mono">${radius ? (typeof radius === 'number' ? radius.toFixed(2) : radius) : '—'}</td>
+  </tr>`;
+});
+tableHtml += '</tbody></table>';
+document.getElementById('starTable').innerHTML = tableHtml;
+
+drawHR();
+</script>
+</body>
+</html>
